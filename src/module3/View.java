@@ -29,6 +29,7 @@ public class View extends Application {
 	private Stage stage;
 	private GridPane grid;
 	
+	//Colors used for coloring squares in the board. Picked in ascending order
 	public ArrayList<Color> availableColors = new ArrayList<Color>() {{
 		add(Color.RED);
 		add(Color.BLUE);
@@ -53,6 +54,10 @@ public class View extends Application {
 		new Controller(fileName, this);
 	}
 	
+	/**
+	 * Initialize grid with given domains, set the scene and show the stage in the window
+	 * @param domains
+	 */
 	public void initializeStage(ArrayList<Domain> domains) {
 		initializeWindowSize();
 		initializeGrid(domains);

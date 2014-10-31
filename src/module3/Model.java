@@ -26,7 +26,7 @@ public class Model {
 	private ArrayList<Constraint> constraints = new ArrayList<Constraint>();
 	
 	//Cost of flowing a square
-	private double arcCost = 1.0;
+	private double arcCost = 0.0;
 	//Dimension of square board
 	private int dimension;
 	//Number of color flows (i.e. size of domain)
@@ -290,9 +290,13 @@ public class Model {
 				return false;
 			}
 		}
+		//Not sure if solution before we can trace a path between all corresponding endpoints
+		//Need to do this without loops or multiple branches
 		for(int i=0; i<numberOfColors; i++) {
 			ArrayList<Variable> variables = findVariablesWithDomainValue(i, domains);
 			ArrayList<Variable> endpoints = findEndpointVariables(variables);
+			//Use one of the endpoints as starting point, so we cover path
+			//from one end to the other
 			Variable initialVariable = endpoints.get(0);
 			ArrayList<Variable> closed = new ArrayList<Variable>();
 			if(!recursivePathTesting(initialVariable, variables, closed)) {
@@ -301,11 +305,20 @@ public class Model {
 		}
 		return true;
 	}
-
+	
+	/**
+	 * Recursively find a neighbour of nextVariable that has not been closed and continue tracing from this,
+	 * adding it to closed. 
+	 * @param nextVariable
+	 * @param variables
+	 * @param oldClosed
+	 * @return True if the last recursion is an endpoint, false if not or finds a dead end
+	 */
 	public boolean recursivePathTesting(Variable nextVariable, ArrayList<Variable> variables, ArrayList<Variable> oldClosed) {
 		ArrayList<Variable> closed = new ArrayList<Variable>();
 		closed.addAll(oldClosed);
 		closed.add(nextVariable);
+		//If closed is equal size as variables, we have controlled all variables
 		if(closed.size()==variables.size()) {
 			if(nextVariable.isEndpoint()) {
 				return true;
@@ -316,14 +329,21 @@ public class Model {
 		ArrayList<Variable> neighbours = findNeighbours(nextVariable, variables);
 		for(Variable neighbour:neighbours) {
 			if(!closed.contains(neighbour)) {
+				//Try all neighbours not closed as next variable on the path
 				if(recursivePathTesting(neighbour, variables, closed)) {
 					return true;
 				}
 			}
 		}
+		//Dead end
 		return false;
 	}
 	
+	/**
+	 * Iterates through variable array and adds the endpoint variables to an array
+	 * @param variables
+	 * @return ArrayList of endpoints
+	 */
 	public ArrayList<Variable> findEndpointVariables(ArrayList<Variable> variables) {
 		ArrayList<Variable> endpoints = new ArrayList<Variable>();
 		for(Variable v: variables) {
@@ -334,6 +354,12 @@ public class Model {
 		return endpoints;
 	}
 	
+	/**
+	 * Finds domain objects where the only domain value is domainValue, i.e. the same color
+	 * @param domainValue
+	 * @param domains
+	 * @return Domains with single domain value equal domainValue
+	 */
 	public ArrayList<Domain> findDomainsWithValue(int domainValue, ArrayList<Domain> domains) {
 		ArrayList<Domain> valueDomains = new ArrayList<Domain>();
 		for(Domain d:domains) {
@@ -558,22 +584,39 @@ public class Model {
 		return false;
 	}
 	
+	/**
+	 * Find smallest domain with 2 or more values, i.e. the smallest domain we
+	 * can generate successors from
+	 * @param domains
+	 * @return Smallest domain larger than 2
+	 */
 	public Domain findSmallestDomain(ArrayList<Domain> domains) {
 		int domainSize = 100;
 		ArrayList<Domain> possibleDomains = new ArrayList<Domain>();
 		for(Domain d:domains) {
 			int currentDomainSize = d.getDomainValues().size();
 			if(currentDomainSize<domainSize && currentDomainSize >= 2) {
+				//New smallest domain, start new list collecting domains of equal size
 				possibleDomains = new ArrayList<Domain>();
 				possibleDomains.add(d);
 				domainSize = currentDomainSize;
 			} else if(currentDomainSize==domainSize) {
+				//Add equal sized domains in case we want to be able to choose
+				//which we want
 				possibleDomains.add(d);
 			}
 		}
 		if(possibleDomains.size()>0) {
-			Random rand = new Random();
-			return possibleDomains.get(rand.nextInt(possibleDomains.size()));
+//			Random rand = new Random();
+//			return possibleDomains.get(rand.nextInt(possibleDomains.size()));
+			if(possibleDomains.size()>1) {
+				//Turns out we utilize GAC better if we choose a domain not adjacent
+				//to our latest pick. Works this way because we work our way from left to
+				//right on the board by always choosing one of the first domains, which
+				//were those generated first
+				return possibleDomains.get(1);
+			}
+			return possibleDomains.get(0);
 		} else {
 			return null;
 		}
@@ -585,20 +628,50 @@ public class Model {
 	 * @return Number of squares left to flow
 	 */
 	public double evaluateHeuristic(SearchNode node) {
-		ArrayList<Domain> domains = node.getDomains();
-		double numberOfSingletonDomains = 0;
-		double numberOfReducedDomains = 0;
-		for(Domain d:domains) {
-			if(d.getDomainValues().size()==1) {
-				numberOfSingletonDomains++;
-			}
-			else if(d.getDomainValues().size()<numberOfColors) {
-				numberOfReducedDomains++;
-			}
-		}
-		return dimension*dimension-numberOfSingletonDomains-numberOfReducedDomains*0.3;
+		double heuristics = dimension*dimension*numberOfColors;
+		heuristics -= numberOfDomainReductions(node);
+		heuristics += evaluateHeuristicFunction(node);
+		return heuristics;
 	}
 	
+	/**
+	 * Finds how many values we have pruned from this nodes domains, either
+	 * by assumptions or CSP
+	 * @param node
+	 * @return Reduced size compared to root node
+	 */
+	public int numberOfDomainReductions(SearchNode node) {
+		ArrayList<Domain> domains = node.getDomains();
+		int reducedSize = 0;
+		for(int i=0; i<domains.size(); i++) {
+			reducedSize += numberOfColors - domains.get(i).getDomainValues().size();
+		}
+		return reducedSize;
+	}
+	
+	/**
+	 * Evaluates heuristic based on path length, rewarding nodes with half the 
+	 * number of variables number of assumptions. This forces the A* to go deep early
+	 * and then breadth
+	 * @param node
+	 * @return Heuristic value of node
+	 */
+	public double evaluateHeuristicFunction(SearchNode node) {
+		int pathLength = 1;
+		while(node.getParent()!=null) {
+			node = node.getParent();
+			pathLength++;
+		}
+		pathLength -= (dimension*dimension-numberOfColors)/2;
+		return Math.abs(pathLength);
+	}
+	
+	/**
+	 * Finds variables corresponding to domains with the single domain value of domainValue
+	 * @param domainValue
+	 * @param domains
+	 * @return Variables with domain with domainValue
+	 */
 	public ArrayList<Variable> findVariablesWithDomainValue(int domainValue, ArrayList<Domain> domains) {
 		ArrayList<Variable> targetVariables = new ArrayList<Variable>();
 		for(Domain d:domains) {
@@ -609,6 +682,11 @@ public class Model {
 		return targetVariables;
 	}
 	
+	/**
+	 * Finds endpoint domains from an array of domains
+	 * @param domains
+	 * @return Returns ArrayList of endpoint variables' domains
+	 */
 	public ArrayList<Domain> getEndpoints(ArrayList<Domain> domains) {
 		ArrayList<Domain> endpoints = new ArrayList<Domain>();
 		for(Domain d:domains) {
@@ -619,21 +697,12 @@ public class Model {
 		return endpoints;
 	}
 	
-	public double sizeOfBoardHeuristic(SearchNode node) {
-		//Find number of squares we need to flow on this board
-		int areaToBeFilled = dimension*dimension;
-		//Find out how many squares/variables we have filled
-		ArrayList<Domain> domains= node.getDomains();
-		int squaresFilled = 0;
-		for(Domain d:domains) {
-			//If domain size is 1 we have decided on color and flowed this variable
-			if(d.getDomainValues().size()==1) {
-				squaresFilled++;
-			}
-		}
-		return areaToBeFilled-squaresFilled;
-	}
-	
+	/**
+	 * Finds and returns manhattan distance between the two variables
+	 * @param start
+	 * @param end
+	 * @return
+	 */
 	public double findDistance(Variable start, Variable end) {
 		double distance = Math.abs(start.getColumn()-end.getColumn());
 		distance += Math.abs(start.getRow()-end.getRow());
@@ -716,5 +785,9 @@ public class Model {
 	
 	public int openSize() {
 		return open.size();
+	}
+	
+	public ArrayList<SearchNode> getClosed() {
+		return closed;
 	}
 }

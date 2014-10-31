@@ -6,7 +6,7 @@ public class SearchNode {
 	
 	private ArrayList<Domain> domains;
 	private ArrayList<SearchNode> children = new ArrayList<SearchNode>();
-	private SearchNode parent;
+	private SearchNode parent = null;
 	private Domain lastVariableDomainToAssumeValue;
 	
 	private double score = -1;

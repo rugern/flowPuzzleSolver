@@ -12,15 +12,6 @@ public class Domain {
 		this.variable = variable;
 	}
 	
-	public void removeFromDomain(int value) {
-		for(int i=0; i<domainValues.size(); i++) {
-			if(domainValues.get(i)==value) {
-				domainValues.remove(i);
-				break;
-			}
-		}
-	}
-	
 	public ArrayList<Integer> getDomainValues() {
 		return domainValues;
 	}

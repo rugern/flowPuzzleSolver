@@ -141,6 +141,9 @@ public class GAC {
 				}
 				if(satisfiable) {
 					numberOfSatisfiedConstraints++;
+					if(numberOfSatisfiedConstraints>2 || (domain.getVariable().isEndpoint() && numberOfSatisfiedConstraints>0)) {
+						break;
+					}
 				}
 			}
 			if(domain.getVariable().isEndpoint()) {
@@ -166,6 +169,8 @@ public class GAC {
 				//Return true to indicate this is no possible solution
 				return false;
 			}
+			//Set last domain to change value to easier find dependent variables
+			//to add to domain later
 			node.setLastVariableDomainToAssumeValue(domain);
 			addAffectedDomainsToQueue(node);
 		}
